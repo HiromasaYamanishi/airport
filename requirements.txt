@@ -1,0 +1,7 @@
+matplotlib
+geopandas
+pandas
+mplleaflet
+scikit-learn
+#torch
+ipykernel
