@@ -21,7 +21,7 @@ from lightgbm import early_stopping
 from lightgbm import log_evaluation
 import lightgbm as lgb
 from imblearn.under_sampling import RandomUnderSampler
-from imblearn.over_sampling import RandomOverSampler
+from imblearn.over_sampling import RandomOverSampler, SMOTENC
 from PIL import Image
 from sklearn import metrics
 from sklearn.metrics import classification_report
@@ -32,20 +32,10 @@ import datetime
 import optuna.integration.lightgbm as lgb
 from lightgbm import early_stopping
 from lightgbm import log_evaluation
-from utils import prefecture_region
-
-
-def season(month):
-    if month in [12, 1, 2]:
-        return 0
-    elif month in [3,4,5]:
-        return 1
-    elif month in [6,7,8]:
-        return 2
-    else:
-        return 3
+import argparse
+from utils import prefecture_region, season
     
-def calc_accuracy(model):
+def calc_accuracy(model, save_name):
     pred = model.predict(X_test).argmax(1)
     report = classification_report(y_test, pred)
 
@@ -68,16 +58,24 @@ def calc_accuracy(model):
     plt.title(f'f1: {round(f1, 3)} Accuracy: {round(accuracy, 3)}')
     cmp.plot(cmap=plt.cm.Blues)
     
-    plt.savefig('../data/confusion_matrix_optuna_morefeature.jpg')
+    plt.savefig(f'../data/confusion_matrix_optuna_{save_name}.jpg')
     
-def save_model(model):
-    with open(f'../data/model/lgbm/lgbm_optuna_morefeature.pkl', 'wb') as f:
+def save_model(model, save_name):
+    with open(f'../data/model/lgbm/lgbm_optuna_{save_name}.pkl', 'wb') as f:
         pickle.dump(model, f)
         
 def save_pkl(path, obj):
     with open(path, 'wb') as f:
         pickle.dump(obj, f)
     
+parser = argparse.ArgumentParser()
+parser.add_argument('--save_name', type=str, default='')
+parser.add_argument('--target', type=str, default='region')
+parser.add_argument('--over_sample', action='store_true')
+parser.add_argument('--under_sample', action='store_true')
+args = parser.parse_args()
+
+
 df_kagawa = pd.read_csv('/home/yamanishi/project/airport/src/data/df_kagawa.csv')
     
 X = df_kagawa[df_kagawa['mesh']!=51342061]
@@ -111,27 +109,45 @@ X_ = X[['home_prefecture','home_prefecture_region', 'gender', 'age', 'num',
 le = LabelEncoder()
 print(X_.shape)
 #X['target'] = le.fit_transform(X['mesh'])
-X['target'] = le.fit_transform(X['region'])
+X['target'] = le.fit_transform(X[args.target])
 y = X['target']
 
+cat_cols = ['home_prefecture','home_prefecture_region', 'gender', 'age',
+        'beh_time_day', 'beh_time_month', 'beh_time_year', 'beh_time_weekday','beh_time_holiday',
+       'pas_time_day', 'pas_time_month', 'pas_time_weekday', 'pas_time_holiday','season',
+       'ap21', 'ap22', 'pas_type']
+
+#for cat in cat_cols:
+#    X_[cat] = X_[cat].astype('category')
+    
 X_train, X_test, y_train, y_test = train_test_split(X_, y, test_size=0.2, random_state=42)
 X_valid, X_test, y_valid, y_test = train_test_split(X_test, y_test, test_size=0.5, random_state=42)
 d = {'X': {'train': X_train, 'val': X_valid, 'test': X_test},
     'y': {'train': y_train, 'val': y_valid, 'test': y_test},
     'orig_X': orig_X,
     'orig_X_encoded': X}
-save_pkl('../data/processed_data_morefeature.pkl', d)
+save_pkl(f'../data/processed_data_{args.save_name}.pkl', d)
 
-over_sample=True
-under_sample=True
-if under_sample:
-    target_count = {k:min(v, 200000) for k,v in zip(y_train.value_counts().index, y_train.value_counts().values)}
+over_sample=args.over_sample
+under_sample=args.under_sample
+if args.under_sample:
+    if args.target=='city':under_sample_count=200000
+    elif args.target=='region':under_sample_count=200000
+    target_count = {k:min(v, under_sample_count) for k,v in zip(y_train.value_counts().index, y_train.value_counts().values)}
     ros = RandomUnderSampler(sampling_strategy=target_count, random_state=0)
     X_train, y_train = ros.fit_resample(X_train, y_train)
-if over_sample:
-    target_count = {k:max(v, 50000) for k,v in zip(y_train.value_counts().index, y_train.value_counts().values)}
-    ros = RandomOverSampler(sampling_strategy=target_count, random_state=0)
+if args.over_sample:
+    if args.target=='city':over_sample_count=50000
+    elif args.target=='region':over_sample_count=20000
+    target_count = {k:max(v, over_sample_count) for k,v in zip(y_train.value_counts().index, y_train.value_counts().values)}
+    #ros = RandomOverSampler(sampling_strategy=target_count, random_state=0)
+    cat_cols_num = []
+    for i, col in enumerate(X_train.columns):
+        if col in cat_cols:
+            cat_cols_num.append(i)
+    ros = SMOTENC(categorical_features=cat_cols_num)
     X_train, y_train = ros.fit_resample(X_train, y_train)
+    print('finish resample')
 train_data = lgb.Dataset(X_train, label=y_train)
 valid_data = lgb.Dataset(X_valid, label=y_valid, reference=train_data)
 test_data = lgb.Dataset(X_test, label=y_test, reference=train_data)
@@ -146,6 +162,7 @@ params = {
 num_round = 1000  # 学習の反復回数
 best_params, tuning_history = dict(), list()
 bst = lgb.train(params, train_data, num_round, valid_sets=[valid_data], 
+                categorical_feature=cat_cols,
                 callbacks=[early_stopping(50), log_evaluation(50)])
 
         
@@ -154,21 +171,21 @@ bst = lgb.train(params, train_data, num_round, valid_sets=[valid_data],
 print('loaded model')
 print(bst.best_score['valid_0']['multi_logloss'])
 print(bst.params)
-calc_accuracy(bst)
+calc_accuracy(bst, args.save_name)
 explainer = shap.TreeExplainer(model=bst)
 print(explainer.expected_value)
 X_test_shap = X_test.copy().reset_index(drop=True)
 shap_values = explainer.shap_values(X=X_test_shap)
-save_pkl('../data/explainer_optuna_morefeature.pkl', explainer)
-save_pkl('../data/shap_values_optuna__morefeature.pkl', shap_values)
-with open('../data/model/best_lgbm_optuna_morefeature.pkl', 'wb') as f:
-    pickle.dump(bst, f)
+save_pkl(f'../data/explainer_optuna_{args.exp_name}.pkl', explainer)
+save_pkl(f'../data/shap_values_optuna_{args.exp_name}.pkl', shap_values)
+save_pkl(f'../data/model/best_lgbm_optuna_{args.exp_name}.pkl', bst)
+
 plt.figure()
 shap.summary_plot(shap_values, X_test_shap) #左側の図
-plt.savefig('../data/shap_summary_optuna_morefeature.jpg')
+plt.savefig(f'../data/shap_summary_optuna_{args.save_name}.jpg')
 plt.figure()
 shap.summary_plot(shap_values, X_test_shap, plot_type='bar') #右側の図
-plt.savefig('../data/shap_summary_bar_optuna_morefeature.jpg')
+plt.savefig(f'../data/shap_summary_bar_optuna_{args.save_name}.jpg')
 
 n = 0#テストデータのn番目の要素を指定
 shap.force_plot(10, shap_values[n, :])
@@ -180,7 +197,7 @@ n = 0#テストデータのn番目の要素を指定
 shap.force_plot(10, shap_values[n, :])
 shap.plots._waterfall.waterfall_legacy(10, 
                                 shap_values[n,:], X_test_shap.iloc[n,:])
-plt.savefig('../data/shap_test_optuna_0_morefeature.jpg') 
+plt.savefig(f'../data/shap_test_optuna_0_{args.save_name}.jpg') 
 
 
 

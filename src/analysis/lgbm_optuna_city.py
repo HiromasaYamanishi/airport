@@ -32,7 +32,57 @@ import datetime
 import optuna.integration.lightgbm as lgb
 from lightgbm import early_stopping
 from lightgbm import log_evaluation
-from utils import prefecture_region
+
+prefecture_region = {
+    '北海道': '北海道地方',
+    '青森県': '東北地方',
+    '岩手県': '東北地方',
+    '宮城県': '東北地方',
+    '秋田県': '東北地方',
+    '山形県': '東北地方',
+    '福島県': '東北地方',
+    '茨城県': '関東地方',
+    '栃木県': '関東地方',
+    '群馬県': '関東地方',
+    '埼玉県': '関東地方',
+    '千葉県': '関東地方',
+    '東京都': '関東地方',
+    '神奈川県': '関東地方',
+    '新潟県': '中部地方',
+    '富山県': '中部地方',
+    '石川県': '中部地方',
+    '福井県': '中部地方',
+    '山梨県': '中部地方',
+    '長野県': '中部地方',
+    '岐阜県': '中部地方',
+    '静岡県': '中部地方',
+    '愛知県': '中部地方',
+    '三重県': '近畿地方',
+    '滋賀県': '近畿地方',
+    '京都府': '近畿地方',
+    '大阪府': '近畿地方',
+    '兵庫県': '近畿地方',
+    '奈良県': '近畿地方',
+    '和歌山県': '近畿地方',
+    '鳥取県': '中国地方',
+    '島根県': '中国地方',
+    '岡山県': '中国地方',
+    '広島県': '中国地方',
+    '山口県': '中国地方',
+    '徳島県': '四国地方',
+    '香川県': '四国地方',
+    '愛媛県': '四国地方',
+    '高知県': '四国地方',
+    '福岡県': '九州地方',
+    '佐賀県': '九州地方',
+    '長崎県': '九州地方',
+    '熊本県': '九州地方',
+    '大分県': '九州地方',
+    '宮崎県': '九州地方',
+    '鹿児島県': '九州地方',
+    '沖縄県': '沖縄地方'
+}
+
 
 
 def season(month):
@@ -68,10 +118,10 @@ def calc_accuracy(model):
     plt.title(f'f1: {round(f1, 3)} Accuracy: {round(accuracy, 3)}')
     cmp.plot(cmap=plt.cm.Blues)
     
-    plt.savefig('../data/confusion_matrix_optuna_morefeature.jpg')
+    plt.savefig('../data/confusion_matrix_optuna_city.jpg')
     
 def save_model(model):
-    with open(f'../data/model/lgbm/lgbm_optuna_morefeature.pkl', 'wb') as f:
+    with open(f'../data/model/lgbm/lgbm_optuna_city.pkl', 'wb') as f:
         pickle.dump(model, f)
         
 def save_pkl(path, obj):
@@ -103,7 +153,7 @@ X['season'] = X['pas_time_month'].apply(season)
 for col in ['age', 'gender', 'home_prefecture', 'ap21', 'ap22', 'beh_time_year', 'home_prefecture_region', 'pas_type']:
        le = LabelEncoder()
        X[col] = le.fit_transform(X[col].astype(str))
-X_ = X[['home_prefecture','home_prefecture_region', 'gender', 'age', 'num',
+X_ = X[['home_prefecture','home_prefecture_region' ,'gender', 'age', 'num',
        'beh_time_hour', 'beh_time_day', 'beh_time_month', 'beh_time_year', 'beh_time_weekday','beh_time_holiday',
        'pas_time_day', 'pas_time_month', 'pas_time_weekday', 'diff_time', 'pas_time_holiday','season',
        'ap21', 'ap22', 'pas_type']]
@@ -111,16 +161,17 @@ X_ = X[['home_prefecture','home_prefecture_region', 'gender', 'age', 'num',
 le = LabelEncoder()
 print(X_.shape)
 #X['target'] = le.fit_transform(X['mesh'])
-X['target'] = le.fit_transform(X['region'])
+X['target'] = le.fit_transform(X['city'])
 y = X['target']
 
+print(y.value_counts())
 X_train, X_test, y_train, y_test = train_test_split(X_, y, test_size=0.2, random_state=42)
 X_valid, X_test, y_valid, y_test = train_test_split(X_test, y_test, test_size=0.5, random_state=42)
 d = {'X': {'train': X_train, 'val': X_valid, 'test': X_test},
     'y': {'train': y_train, 'val': y_valid, 'test': y_test},
     'orig_X': orig_X,
     'orig_X_encoded': X}
-save_pkl('../data/processed_data_morefeature.pkl', d)
+save_pkl('../data/processed_data_city.pkl', d)
 
 over_sample=True
 under_sample=True
@@ -129,7 +180,7 @@ if under_sample:
     ros = RandomUnderSampler(sampling_strategy=target_count, random_state=0)
     X_train, y_train = ros.fit_resample(X_train, y_train)
 if over_sample:
-    target_count = {k:max(v, 50000) for k,v in zip(y_train.value_counts().index, y_train.value_counts().values)}
+    target_count = {k:max(v, 20000) for k,v in zip(y_train.value_counts().index, y_train.value_counts().values)}
     ros = RandomOverSampler(sampling_strategy=target_count, random_state=0)
     X_train, y_train = ros.fit_resample(X_train, y_train)
 train_data = lgb.Dataset(X_train, label=y_train)
@@ -159,16 +210,16 @@ explainer = shap.TreeExplainer(model=bst)
 print(explainer.expected_value)
 X_test_shap = X_test.copy().reset_index(drop=True)
 shap_values = explainer.shap_values(X=X_test_shap)
-save_pkl('../data/explainer_optuna_morefeature.pkl', explainer)
-save_pkl('../data/shap_values_optuna__morefeature.pkl', shap_values)
-with open('../data/model/best_lgbm_optuna_morefeature.pkl', 'wb') as f:
+save_pkl('../data/explainer_optuna_city.pkl', explainer)
+save_pkl('../data/shap_values_optuna_city.pkl', shap_values)
+with open('../data/model/best_lgbm_optuna_city.pkl', 'wb') as f:
     pickle.dump(bst, f)
 plt.figure()
 shap.summary_plot(shap_values, X_test_shap) #左側の図
-plt.savefig('../data/shap_summary_optuna_morefeature.jpg')
+plt.savefig('../data/shap_summary_optuna_city.jpg')
 plt.figure()
 shap.summary_plot(shap_values, X_test_shap, plot_type='bar') #右側の図
-plt.savefig('../data/shap_summary_bar_optuna_morefeature.jpg')
+plt.savefig('../data/shap_summary_bar_optuna_city.jpg')
 
 n = 0#テストデータのn番目の要素を指定
 shap.force_plot(10, shap_values[n, :])
@@ -180,7 +231,7 @@ n = 0#テストデータのn番目の要素を指定
 shap.force_plot(10, shap_values[n, :])
 shap.plots._waterfall.waterfall_legacy(10, 
                                 shap_values[n,:], X_test_shap.iloc[n,:])
-plt.savefig('../data/shap_test_optuna_0_morefeature.jpg') 
+plt.savefig('../data/shap_test_optuna_0_city.jpg') 
 
 
 
