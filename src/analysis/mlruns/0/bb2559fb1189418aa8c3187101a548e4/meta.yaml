@@ -1,0 +1,15 @@
+artifact_uri: file:///home/yamanishi/project/airport/src/analysis/mlruns/0/bb2559fb1189418aa8c3187101a548e4/artifacts
+end_time: 1704360881276
+entry_point_name: ''
+experiment_id: '0'
+lifecycle_stage: active
+run_id: bb2559fb1189418aa8c3187101a548e4
+run_name: ./review_gender
+run_uuid: bb2559fb1189418aa8c3187101a548e4
+source_name: ''
+source_type: 4
+source_version: ''
+start_time: 1704359862051
+status: 3
+tags: []
+user_id: yamanishi

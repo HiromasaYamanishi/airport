@@ -1,2 +1,6 @@
 src/data
 src/analysis/*.ipynb
+src/analysis/notebooks/*.ipynb
+dash-shap-components
+*.pyc
+src/analysis/wandb
